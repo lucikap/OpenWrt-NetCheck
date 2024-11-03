@@ -38,6 +38,6 @@ make package/luci-app-netcheck/compile V=s                         �
 OpenWrt-NetCheck使用MIT许可证授权。有关更多信息，请参阅[LICENSE](LICENSE)文件。
 
 ## 联系方式
-如有任何问题或反馈意见，请随时通过[email@example.com]联系我们。
+如有任何问题或反馈意见，请随时通过[169296793@qq.com]联系我们。
 
 希望大家能使用OpenWrt-NetCheck成功排除故障！
