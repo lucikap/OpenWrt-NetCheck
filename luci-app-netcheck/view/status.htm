@@ -1,0 +1,91 @@
+   <style>
+        table {
+            width: 80%;
+            margin: auto;
+            border-collapse: collapse;
+
+        }
+
+        th, td { 
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th { 
+            background-color: #2b7aa7;
+            color: white;
+            font-weight: bold;
+        }
+
+        td {
+            font-size: 14px; /
+        }
+
+        .timeout {
+            color: red; /* 超时字体颜色为红色 */
+        }
+
+        .fast {
+            color: green; /* 小于100ms字体颜色为绿色 */
+        }
+
+        .slow {
+            color: orange; /* 超过100ms字体颜色为橙色 */
+        }
+    </style>
+
+
+<table>
+    <thead>
+        <tr>
+            <th>网址</th>
+            <th>响应时间</th>
+        </tr>
+    </thead>
+    <tbody id="results-table-body">
+        <!-- 动态填充数据 -->
+    </tbody>
+</table>
+
+<script type="text/javascript">
+//<![CDATA[
+    function updateTable(data) {
+        const results = data.results;
+        const tableBody = document.getElementById('results-table-body');
+        tableBody.innerHTML = ''; // 清空表格内容
+
+        for (const [key, value] of Object.entries(results)) {
+            const row = document.createElement('tr');
+            const cell1 = document.createElement('td');
+            const cell2 = document.createElement('td');
+
+            cell1.textContent = key; // URL
+            cell2.textContent = value; // 响应时间
+
+            // 根据响应时间设置字体颜色
+            if (value === "请求超时") {
+                cell2.classList.add('timeout');
+            } else {
+                const time = parseFloat(value); // 提取时间值
+                if (time < 100) {
+                    cell2.classList.add('fast');
+                } else {
+                    cell2.classList.add('slow');
+                }
+            }
+
+            row.appendChild(cell1);
+            row.appendChild(cell2);
+            tableBody.appendChild(row);
+        }
+    }
+
+    XHR.poll(5, '<%=url([[admin]], [[diagnostics]], [[get_result]])%>', null,
+        function(x, data) {
+            updateTable(data); // 更新表格
+        }
+    );
+//]]>
+</script>
+

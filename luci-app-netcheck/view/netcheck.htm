@@ -1,0 +1,105 @@
+<script type="text/javascript" src="<%=resource%>/cbi.js?v=git-22.279.28429-0cb5c5c"></script>
+<script type="text/javascript">//<![CDATA[
+    var stxhr = new XHR();
+
+    function get_results() {
+        var output = document.getElementById('diag-rc-output');
+        var button = document.querySelector('.cbi-button-apply'); // 获取开始诊断按钮
+        var saveButton = document.querySelector('.cbi-button-save'); // 获取保存按钮
+        var reseButton = document.querySelector('.cbi-button-reset'); // 获取清空内容按钮
+        // 隐藏保存按钮
+        saveButton.style.display = 'none'; // 将保存按钮隐藏
+        // 隐藏清空内容按钮
+        reseButton.style.display = 'none'; // 将清空内容按钮隐藏
+        // 禁用开始诊断按钮
+        button.disabled = true;
+        // 禁用保存按钮
+        saveButton.disabled = true;
+        // 禁用清空内容按钮
+        reseButton.disabled = true;
+
+        output.innerHTML = `
+    <div style="display: flex; align-items: center; justify-content: center; background-color: #f0f8ff; padding: 15px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+        <img src="<%=resource%>/icons/loading.gif" alt="<%:Loading%>" style="vertical-align: middle; margin-right: 10px;" />
+        <p style="color: #3498db; font-size: 18px; font-weight: bold; font-family: Arial, sans-serif; margin: 0;">
+            <%: 正在等待诊断结果，请耐心等待... %>
+        </p>
+    </div>`;
+
+        stxhr.get("<%=url('admin/diagnostics/get_result_all')%>", { token: "<%=token%>" },
+            function (x) {
+                // 请求完成后重新启用开始诊断按钮
+                button.disabled = false;
+                // 启用保存按钮
+                saveButton.disabled = false;
+                // 启用清空内容按钮
+                reseButton.disabled = false;
+
+                if (x.responseText) {
+                    // 直接将响应文本插入到HTML中
+                    output.innerHTML = '<pre style="white-space: pre-wrap; max-height: 300px; overflow-y: auto; border-radius: 10px; background-color: black;">' + x.responseText + '</pre>';
+
+
+                    // 显示保存按钮
+                    saveButton.style.display = 'inline-block'; // 将保存按钮设置为可见
+                    // 显示清空内容按钮
+                    reseButton.style.display = 'inline-block'; // 将清空内容按钮设置为可见
+                } else {
+                    output.innerHTML = '<span class="error"><%:错误: 未能获取结果%></span>';
+
+                    // 隐藏保存按钮
+                    saveButton.style.display = 'none'; // 将保存按钮隐藏
+                    // 隐藏清空内容按钮
+                    reseButton.style.display = 'none'; // 将清空内容按钮隐藏
+                }
+            });
+    }
+
+    function saveResults() {
+        var output = document.getElementById('diag-rc-output');
+        var time = new Date().toLocaleString(); // 获取当前时间戳
+        var textContent = output.innerText; // 获取诊断结果文本
+        // 去掉空行
+        var cleanedContent = textContent.split('\n').filter(function (line) {
+            return line.trim() !== ''; // 过滤掉空行
+        }).join('\n'); // 将非空行重新连接
+        // 创建一个 Blob
+        var blob = new Blob([cleanedContent], { type: 'text/plain' });
+        // 创建一个链接元素
+        var link = document.createElement('a');
+        // 创建一个指向 Blob 对象的 URL
+        link.href = URL.createObjectURL(blob);
+        // 设置文件名并添加日期时间戳
+        link.download = '诊断日志-' + time + '.txt';
+        // 触发下载
+        link.click();
+        // 释放 Blob URL
+        URL.revokeObjectURL(link.href);
+    }
+
+    function resetForm() {
+        var output = document.getElementById('diag-rc-output');
+        output.innerHTML = ''; // 清空输出内容
+        // 隐藏保存按钮
+        var saveButton = document.querySelector('.cbi-button-save');
+        saveButton.style.display = 'none'; // 将保存按钮隐藏
+        // 隐藏清空内容按钮
+        var reseButton = document.querySelector('.cbi-button-reset');
+        reseButton.style.display = 'none'; // 将清空内容按钮隐藏
+    }
+    //]]></script>
+
+<form>
+    <h1 style="display: flex; justify-content: center; gap: 10px;">
+        <br>
+        <input type="button" class="cbi-button cbi-button-apply" value="网络诊断" onclick="get_results()" />
+        <input type="button" class="cbi-button cbi-button-save" value="导出结果"
+            onclick="saveResults(); alert('已将诊断结果下载到本地');" style="display: none;" />
+        <input type="button" class="cbi-button cbi-button-reset" value="清空内容" onclick="resetForm()"
+            style="display: none;" />
+    </h1>
+
+    <div>
+        <div id="diag-rc-output" name="diag-rc-output"></div>
+    </div>
+</form>

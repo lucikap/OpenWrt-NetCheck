@@ -1,0 +1,207 @@
+#!/bin/sh
+
+# 获取当前时间的函数
+get_current_time() {
+    date +"%Y-%m-%d %H:%M:%S"
+}
+
+# 打印系统状态
+get_system_status() {
+    # 获取内存总量和已用量
+    used=$(free -m | awk 'NR==2{print $3}')
+    total=$(free -m | awk 'NR==2{print $2}') 
+
+    # 计算内存使用百分比，保留小数点
+    percentage=$(awk "BEGIN {printf \"%.2f\", ($used/$total) * 100}")
+
+    # 将小数转为整数进行比较
+    int_percentage=$(printf "%.0f" "$percentage")
+
+    if [ "$int_percentage" -ge 60 ]; then
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 内存占用：${percentage}% [过高]❌</p>"
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 请检查你的系统软件是否发生了错误或重启设备！</p>"
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] 内存占用：${percentage}% [正常]✅</p>"
+    fi
+
+    cpu_percentage=$(expr 100 - $(top -n 1 | grep 'CPU:' | awk -F '%' '{print$4}' | awk -F ' ' '{print$2}'))
+
+    if [ "$cpu_percentage" -ge 70 ]; then
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] CPU占用：${cpu_percentage}% [过高]❌</p>"
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 提示：使用htop/top等命令以监控系统资源使用情况！</p>"
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] CPU占用：${cpu_percentage}% [正常]✅</p>"
+    fi
+}
+
+
+# 提取物理接口并检查其状态
+get_phy_status() {
+    for iface in $(ls /sys/class/net/); do
+        case "$iface" in
+            eth*|br*|wlan*)
+                if [ -f "/sys/class/net/$iface/operstate" ]; then
+                    status=$(cat /sys/class/net/$iface/operstate)
+                else
+                    status="未知"
+                fi
+
+                if [ -f "/sys/class/net/$iface/speed" ]; then
+                    speed=$(cat /sys/class/net/$iface/speed 2>/dev/null || echo "未知")
+                else
+                    speed="未知"
+                fi
+
+                echo "<p>[$(get_current_time)] $iface | 状态: <span style='color:rgb(24, 252, 24);'>$status</span> | 速率: <span style='color:orange;'>${speed} Mb/s</span></p>"
+                ;;
+        esac
+    done
+}
+
+# 确认WAN接口
+get_internet_status() {
+    
+    WAN_IFACE=$(uci get network.wan.device 2>/dev/null || uci get network.wan.ifname 2>/dev/null)
+    if [ -z "$WAN_IFACE" ]; then
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 未找到WAN接口，请检查网络配置❌</p>"
+        exit 1
+    fi
+
+    # 检查WAN接口的连接状态
+    WAN_STATUS=$(cat /sys/class/net/$WAN_IFACE/operstate)
+    if [ "$WAN_STATUS" != "up" ]; then
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] WAN接口 $WAN_IFACE 未连接。请检查线路或设备❌</p>"
+        exit 1
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] WAN接口连接正常✅</p>"
+    fi
+
+    # 获取WAN接口的IP地址和联网协议
+    WAN_IP=$(ip -4 addr show $WAN_IFACE | awk '/inet / {print $2}' | cut -d/ -f1)
+    WAN_PROTO=$(uci get network.wan.proto)
+
+    if [ -z "$WAN_IP" ]; then
+        echo "<p style='color:orange;'>[$(get_current_time)] 未获取到WAN口IP地址，正在尝试重启网络服务...⚠</p>"
+        /etc/init.d/network restart &
+        sleep 10
+        WAN_IP=$(ip -4 addr show $WAN_IFACE | awk '/inet / {print $2}' | cut -d/ -f1)
+        if [ -z "$WAN_IP" ]; then
+            echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 重启网络服务后仍无法获取到IP，请检查链路状态: $WAN_STATUS 或互联网服务商（ISP）配置。❌</p>"
+            exit 1
+        fi
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] WAN口协议：$WAN_PROTO</p>"
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] WAN口已获取到IP地址：$WAN_IP✅</p>"
+    fi
+
+    # 测试DNS解析和网络连通性
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] 正在Ping www.baidu.com 测试...</p>"
+    if ping -c 4 -W 1 www.baidu.com ; then
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] DNS解析正常✅</p>"
+    else
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] DNS解析失败，请检查DNS配置❌</p>"
+    fi
+
+    response_code=$(curl -o /dev/null -s -w "%{http_code}" http://g.cn/generate_204)
+
+    # 检查响应码并输出对应的网络状态
+    case "$response_code" in
+        204)
+            echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] 网络连接正常，响应码：204✅</p>"
+            ;;
+        000)
+            echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] CURL请求失败，服务不可达❌</p>"
+            ;;
+        *)
+            echo "<p style='color:orange;'>[$(get_current_time)] 网络可能需要认证，响应码：$response_code⚠</p>"
+            ;;
+    esac
+
+    #检查重绑定保护配置
+    rebind_protection=$(uci get dhcp.@dnsmasq[0].rebind_protection)
+    if [ "$rebind_protection" == "1" ]; then
+        echo "<p style='color:#bde92e;'>[$(get_current_time)] 警告：检测到DHCP服务器开启了重绑定保护，如果无法访问需要认证的网络，请在DHCP/DNS设置中关闭重绑定保护⚠</p>"
+    else
+        echo "<p style='color:#2ee9a4;'>[$(get_current_time)] 未开启重绑定保护，因此可能受到来自内网的重绑定攻击，请确保你处于安全的网络环境⚠</p>"
+    fi
+}
+
+get_system_IP() { 
+# 检测IP冲突
+    GATEWAY_IP=$(ip route | grep 'default via' | awk '{print $3}')
+    LAN_IP=$(uci get network.lan.ipaddr)  
+    if [ "$GATEWAY_IP" == "$LAN_IP" ]; then
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 检测到IP冲突，WAN口网关和LAN口IP相同。请修改LAN口网关以避免冲突❌</p>"
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] 未检测到IP冲突✅</p>"
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] WAN口网关IP：<a href='http://$GATEWAY_IP' target='_blank'>$GATEWAY_IP</a></p>" #超链接
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] LAN口网关IP：$LAN_IP</p>"
+    fi
+
+    # 检查路由表是否异常
+    # echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] 正在检查路由表...</p>"
+    route_table=$(ip route)
+    if ! echo "$route_table" | grep -q "^default via"; then
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 警告：未找到默认路由，请检查路由设置❌</p>"
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] 路由表正常✅</p>"
+    fi
+
+    # 检查自定义防火墙规则
+    FIREWALL_CUSTOM_FILE="/etc/firewall.user"
+    if [ -f "$FIREWALL_CUSTOM_FILE" ]; then
+        if grep -q "^[^#]" "$FIREWALL_CUSTOM_FILE"; then
+            echo "<p style='color:orange;'>[$(get_current_time)] 检测到自定义防火墙规则，请确保规则配置正确⚠</p>"
+        else
+            echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] 未检测到自定义防火墙规则✅</p>"
+        fi
+    else
+        echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] 未找到自定义防火墙文件⚠</p>"
+    fi
+} 
+
+get_error_log() {
+    error_count=$(logread | grep -i "error" | wc -l) # 计算错误日志行数
+    if [ "$error_count" -gt 0 ]; then
+        echo "<p style='color:orange;'>[$(get_current_time)] 检测到错误日志：$error_count 行，这可能是导致网络故障的原因⚠</p>"
+        if [ "$error_count" -lt 20 ]; then
+            logread | grep -i "error" | while read -r line; do
+                echo "<p style='color:orange;'>$line</p>"
+            done
+        else
+            echo "<p style='color:rgb(250, 48, 48);'>[$(get_current_time)] oh~ TM的甘！你的系统错误日志超过20行！请前往系统日志查看❌</p>"
+        fi
+    else
+        echo "<p style='color:rgb(24, 252, 24);'>[$(get_current_time)] 未检测到错误日志✅</p>"
+    fi
+}
+
+
+
+# 主函数
+main() {
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] 脚本版本：v1.0</p>"
+    #获取时间戳
+    time1=$(date +%s)
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] =============系统状态信息============</p>"
+    get_system_status
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] =============物理链路状态============</p>"
+    get_phy_status
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] =============网络连接状态============</p>"
+    get_internet_status
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] =============系统配置状态============</p>"
+    get_system_IP
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] =============系统错误日志============</p>"
+    get_error_log
+    time2=$(date +%s)
+    #计算诊断用时（单位：分：秒）
+    seconds=$((time2 - time1))
+    minutes=$(($seconds/60))
+    seconds=$(($seconds%60))
+    echo "<p style='color:rgb(200, 247, 12);'>[$(get_current_time)] 诊断用时：$minutes分$seconds秒</p>"
+    echo "<p style='color:rgb(12, 180, 247);'>[$(get_current_time)] =============网络诊断结束============</p>"
+}
+
+main
+
+
